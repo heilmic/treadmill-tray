@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.pyo
+
+build/
+dist/
+*.spec
+
+config.json
+*.log
+
+# Local screenshots / captures if you add temporary files
+*.tmp
