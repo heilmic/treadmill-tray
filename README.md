@@ -17,18 +17,26 @@ A compact Windows tray app for controlling a PitPat treadmill over Bluetooth Low
 
 ## Current UI
 
-Reference screenshot(s) live here:
+- Screenshot: [`docs/screenshots/screenshot_app.png`](docs/screenshots/screenshot_app.png)
 
-- [`docs/screenshots/`](docs/screenshots/)
-- BLE reverse-engineering reference: [`docs/screenshots/ble-capture-reference.png`](docs/screenshots/ble-capture-reference.png)
 
-> Tip: add fresh app screenshots here before publishing the repo publicly.
+
+
+## Support the project
+
+If this project saved you time or helped you get your treadmill working, you can support it with a coffee or a beer:
+
+- **Ko-fi:** [☕ Buy me a coffee on Ko-fi](https://ko-fi.com/heilmic)
+
+
 
 ## Protocol / HEX commands
 
 A documented overview of the currently known BLE service UUIDs and command packets is available here:
 
 - [`docs/reference/hex-commands.md`](docs/reference/hex-commands.md)
+
+Including Mute / Unmute for silencing the treadmill. I did not find these commands, so i used bluetooth debugging to get them.
 
 ## Project structure
 
@@ -124,11 +132,7 @@ Each entry stores, where available:
 - Sound mute/unmute commands were verified against a real Bluetooth capture.
 - Legacy / unused artifacts were intentionally removed to keep the repo cleaner.
 
-## Support the project
 
-If this project saved you time or helped you get your treadmill working, you can support it with a coffee or a beer:
-
-- **Ko-fi:** [☕ Buy me a coffee on Ko-fi](https://ko-fi.com/heilmic)
 
 
 ## Disclaimer
