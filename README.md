@@ -128,13 +128,8 @@ Each entry stores, where available:
 
 If this project saved you time or helped you get your treadmill working, you can support it with a coffee or a beer:
 
-- **Ko-fi:** `ko-fi.com/heilmic`
+- **Ko-fi:** [☕ Buy me a coffee on Ko-fi](https://ko-fi.com/heilmic)
 
-Example:
-
-```text
-ko-fi.com/heilmic
-```
 
 ## Disclaimer
 
