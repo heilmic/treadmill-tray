@@ -17,8 +17,9 @@ A compact Windows tray app for controlling a PitPat treadmill over Bluetooth Low
 
 ## Current UI
 
-- Screenshot: [`docs/screenshots/screenshot_app.png`](docs/screenshots/screenshot_app.png)
 
+![text](docs/screenshots/screenshot_app.png)
+- Screenshot: [`docs/screenshots/screenshot_app.png`](docs/screenshots/screenshot_app.png)
 
 
 
