@@ -6,7 +6,7 @@ Einfache Windows-Tray-Steuerung für das PitPat Laufband BA09-B.
 
 ![PitPat Treadmill Tray Screenshot](docs/screenshots/screenshot_app.png)
 
-![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/heilmic)
 
 Support / Unterstützung:
 https://ko-fi.com/heilmic
@@ -16,6 +16,9 @@ https://ko-fi.com/heilmic
 If you just want to use the app on Windows, download the latest packaged release.
 
 Wenn du die App einfach unter Windows nutzen möchtest, nimm die fertige Release-Version.
+
+Current release:
+- https://github.com/heilmic/treadmill-tray/releases/latest
 
 Current release file in this repo:
 - `release/treadmill-tray-v0.1.0-win64.zip`
