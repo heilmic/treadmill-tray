@@ -94,14 +94,14 @@ class BluetoothManagerFBA:
         try:
             if self.client.is_connected:
                 self.disconnect()
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.warning(f"Shutdown disconnect warning: {exc}")
         try:
             if self.loop.is_running():
                 self.loop.call_soon_threadsafe(self.loop.stop)
             self.thread.join(timeout=5)
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.warning(f"Shutdown loop warning: {exc}")
 
     # ------------------------------------------------------------------
     # Notifications

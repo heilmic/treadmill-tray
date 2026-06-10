@@ -1,141 +1,97 @@
-# treadmill-tray
+# PitPat Treadmill Tray
 
-A compact Windows tray app for controlling a PitPat treadmill over Bluetooth Low Energy (BLE).
+Simple Windows tray control for the PitPat treadmill BA09-B.
 
-`treadmill-tray` is a practical desktop controller built around the working **FBA BLE protocol path** and verified against real Bluetooth captures. It supports the core treadmill controls, direct speed presets, sound mute/unmute, and a local workout history.
+Einfache Windows-Tray-Steuerung für das PitPat Laufband BA09-B.
 
-## Features
+![PitPat Treadmill Tray Screenshot](docs/screenshots/screenshot_app.png)
 
-- Windows tray app with compact controller UI
-- BLE device scan and connect
-- Start / pause / stop
-- Direct speed buttons: **1–6 km/h**
-- Fine adjustment: **± 0.1 km/h**
-- Verified **sound mute / unmute** support
-- Local workout history
-- One-file Windows `.exe` build via PyInstaller
+![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)
 
-## Current UI
+Support / Unterstützung:
+https://ko-fi.com/heilmic
 
+## Download
 
-![text](docs/screenshots/screenshot_app.png)
-- Screenshot: [`docs/screenshots/screenshot_app.png`](docs/screenshots/screenshot_app.png)
+If you just want to use the app on Windows, download the latest packaged release.
 
+Wenn du die App einfach unter Windows nutzen möchtest, nimm die fertige Release-Version.
 
+Current release file in this repo:
+- `release/treadmill-tray-v0.1.0-win64.zip`
 
-## Support the project
+## English
 
-If this project saved you time or helped you get your treadmill working, you can support it with a coffee or a beer:
+PitPat Treadmill Tray is a small Windows app for normal users who want to control their PitPat treadmill BA09-B without extra clutter.
 
-- **Ko-fi:** [☕ Buy me a coffee on Ko-fi](https://ko-fi.com/heilmic)
+It is made for people who want:
+- a simple Bluetooth connection
+- quick Start / Pause / Stop controls
+- direct speed buttons from 1 to 6 km/h
+- small 0.1 km/h speed adjustments
+- sound mute / unmute
+- a small local workout history
 
+Why this app?
+- no cloud account
+- no big dashboard
+- no unnecessary extras
+- focused on practical everyday use on Windows
 
-
-## Protocol / HEX commands
-
-A documented overview of the currently known BLE service UUIDs and command packets is available here:
-
-- [`docs/reference/hex-commands.md`](docs/reference/hex-commands.md)
-
-Including Mute / Unmute for silencing the treadmill. I did not find these commands, so i used bluetooth debugging to get them.
-
-## Project structure
-
-```text
-tray_app.py              Main Windows tray UI
-bluetooth_manager_fba.py BLE connection / notifications / writes
-treadmill_controller.py  Packet generation for treadmill commands
-treadmill_data.py        Payload parsing / telemetry decoding
-workout_history.py       Local persistent workout history
-__main__.py              Alternate Python entry point
-build-release.sh         Helper script for PyInstaller builds
-docs/
-  reference/
-    hex-commands.md
-  screenshots/
-```
-
-## Requirements
-
+Requirements:
 - Windows
-- Python 3.14+ (tested locally with Python 3.14)
-- Bluetooth adapter with BLE support
+- Bluetooth enabled
+- PitPat treadmill BA09-B
 
-Python packages:
+Quick start:
+1. Start the app
+2. Click "Suchen"
+3. Select your treadmill
+4. Click "Verbinden"
+5. Use Start / Pause / Stop and the speed buttons
 
-- `bleak`
-- `pystray`
-- `Pillow`
-- `pyinstaller` (for release builds)
+Good to know:
+- workout history is stored locally on your PC
+- this project is unofficial and not affiliated with PitPat
+- use it at your own risk
 
-Install dependencies:
+For technical details, build instructions and protocol notes:
+- see [technical.md](technical.md)
 
-```bash
-python -m pip install -r requirements.txt
-```
+## Deutsch
 
-## Run locally
+PitPat Treadmill Tray ist eine kleine Windows-App für normale Anwender, die ihr PitPat Laufband BA09-B einfach und ohne unnötigen Ballast steuern möchten.
 
-```bash
-python tray_app.py
-```
+Die App ist gedacht für Menschen, die wollen:
+- eine einfache Bluetooth-Verbindung
+- schnelle Start / Pause / Stop-Steuerung
+- direkte Geschwindigkeitsbuttons von 1 bis 6 km/h
+- kleine Anpassungen in 0,1-km/h-Schritten
+- Ton stummschalten oder wieder aktivieren
+- eine kleine lokale Trainingshistorie
 
-or:
+Warum diese App?
+- kein Cloud-Konto
+- kein großes Dashboard
+- keine unnötigen Extras
+- Fokus auf praktische Nutzung unter Windows
 
-```bash
-python __main__.py
-```
+Voraussetzungen:
+- Windows
+- Bluetooth aktiviert
+- PitPat Laufband BA09-B
 
-## Build a Windows release
+Schnellstart:
+1. App starten
+2. Auf "Suchen" klicken
+3. Laufband auswählen
+4. Auf "Verbinden" klicken
+5. Start / Pause / Stop und die Geschwindigkeitsbuttons nutzen
 
-Quick build:
+Gut zu wissen:
+- die Trainingshistorie wird lokal auf deinem PC gespeichert
+- dieses Projekt ist inoffiziell und steht in keiner Verbindung zu PitPat
+- Nutzung auf eigenes Risiko
 
-```bash
-bash build-release.sh
-```
-
-Or manually:
-
-```bash
-python -m pip install pyinstaller
-python -m PyInstaller --noconfirm --clean --onefile --windowed --name treadmill-tray tray_app.py
-```
-
-Expected output:
-
-- `dist/treadmill-tray.exe`
-
-## Workout history
-
-Workout history is stored locally in:
-
-- `%APPDATA%/treadmill-tray/workout_history.json`
-
-Each entry stores, where available:
-
-- start time
-- duration
-- distance
-- steps
-- calories
-- average speed
-- target speed
-
-## Known limitations
-
-- Some treadmills appear to report `steps=0` in BLE notifications; the app falls back to an estimated step count based on distance.
-- The sound state may initially be unknown until the first relevant notification arrives.
-- The UI is optimized for practical use, not for exhaustive device diagnostics.
-
-## Development notes
-
-- The active BLE path is the **FBA** service/characteristic family.
-- Sound mute/unmute commands were verified against a real Bluetooth capture.
-- Legacy / unused artifacts were intentionally removed to keep the repo cleaner.
-
-
-
-
-## Disclaimer
-
-This project is unofficial and is not affiliated with PitPat. Use it at your own risk.
+Für technische Details, Build-Hinweise und Protokollnotizen:
+- siehe [technical.md](technical.md)

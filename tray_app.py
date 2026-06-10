@@ -6,7 +6,7 @@ Steuert das PitPat Laufband via Bluetooth direkt aus dem System-Tray.
 
 import asyncio
 import json
-import os
+import logging
 import threading
 import tkinter as tk
 from tkinter import messagebox
@@ -25,6 +25,7 @@ from treadmill_data import TreadmillData
 from workout_history import load_history, save_entry, make_entry
 
 CONFIG_FILE = Path(__file__).parent / "config.json"
+LOGGER = logging.getLogger(__name__)
 
 # --- Farben (Dark Theme) ---
 C_BG     = "#1a1b2e"
@@ -129,16 +130,16 @@ class TreadmillTrayApp:
             if CONFIG_FILE.exists():
                 with open(CONFIG_FILE, encoding="utf-8") as f:
                     return json.load(f)
-        except Exception:
-            pass
+        except Exception as exc:
+            LOGGER.warning("Konfiguration konnte nicht geladen werden: %s", exc)
         return {}
 
     def _save_config(self):
         try:
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=2)
-        except Exception:
-            pass
+        except Exception as exc:
+            LOGGER.warning("Konfiguration konnte nicht gespeichert werden: %s", exc)
 
     # ------------------------------------------------------------------
     # UI-Hilfsmethoden
@@ -356,8 +357,8 @@ class TreadmillTrayApp:
         try:
             self._tray_icon.icon = _make_tray_icon(color)
             self._tray_icon.title = tip
-        except Exception:
-            pass
+        except Exception as exc:
+            LOGGER.debug("Tray-Icon konnte nicht aktualisiert werden: %s", exc)
 
     # ------------------------------------------------------------------
     # Fenster-Verwaltung
@@ -691,7 +692,7 @@ class TreadmillTrayApp:
                 try:
                     started = datetime.fromisoformat(started).strftime("%d.%m.%Y %H:%M")
                 except Exception:
-                    pass
+                    started = str(started)
                 duration_s = int(item.get("duration_s", 0))
                 h, m, s = duration_s // 3600, (duration_s % 3600) // 60, duration_s % 60
                 duration = f"{h:02d}:{m:02d}:{s:02d}"
@@ -777,19 +778,18 @@ class TreadmillTrayApp:
         if self.manager:
             try:
                 self.manager.shutdown()
-            except Exception:
-                pass
+            except Exception as exc:
+                LOGGER.warning("Manager-Shutdown beim Beenden fehlgeschlagen: %s", exc)
         if self._tray_icon:
             try:
                 self._tray_icon.stop()
-            except Exception:
-                pass
+            except Exception as exc:
+                LOGGER.warning("Tray-Stop beim Beenden fehlgeschlagen: %s", exc)
         try:
             self.root.quit()
             self.root.destroy()
-        except Exception:
-            pass
-        os._exit(0)
+        except Exception as exc:
+            LOGGER.warning("Fenster konnte nicht sauber geschlossen werden: %s", exc)
 
     # ------------------------------------------------------------------
     # Start
