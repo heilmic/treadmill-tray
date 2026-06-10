@@ -27,6 +27,14 @@ from workout_history import load_history, save_entry, make_entry
 CONFIG_FILE = Path(__file__).parent / "config.json"
 LOGGER = logging.getLogger(__name__)
 
+# Kalibrierter Schätzwert: 50 gezählte Schritte wurden bei 0,75 m/Schritt nur
+# als 34 gemeldet. Realistischere Schrittlänge laut Messung: ~0,51 m/Schritt.
+_SCHRITT_LAENGE_M = 0.51
+
+
+def _estimated_steps_from_distance(dist_m: int) -> int:
+    return int(max(0, dist_m) / _SCHRITT_LAENGE_M)
+
 # --- Farben (Dark Theme) ---
 C_BG     = "#1a1b2e"
 C_CARD   = "#16213e"
@@ -140,6 +148,14 @@ class TreadmillTrayApp:
                 json.dump(self.config, f, indent=2)
         except Exception as exc:
             LOGGER.warning("Konfiguration konnte nicht gespeichert werden: %s", exc)
+
+    def _steps_for_data(self, data: TreadmillData) -> int:
+        steps = data.steps
+        if steps == 0 and data.real_electricity_steps is not None:
+            steps = data.real_electricity_steps
+        if steps == 0 and self._session_start_dist is not None:
+            steps = _estimated_steps_from_distance(data.distance - self._session_start_dist)
+        return steps
 
     # ------------------------------------------------------------------
     # UI-Hilfsmethoden
@@ -423,14 +439,10 @@ class TreadmillTrayApp:
             )
             self.stat_vars["calories"].set(f"{data.calories}  kcal")
 
-            steps = data.steps
-            if steps == 0 and data.real_electricity_steps is not None:
-                steps = data.real_electricity_steps
-            if steps == 0 and self._session_start_dist is not None:
+            steps = self._steps_for_data(data)
+            if data.steps == 0 and data.real_electricity_steps is None and self._session_start_dist is not None:
                 # data.distance wird in der UI als Meter behandelt (÷1000 => km).
-                # Daher hier 0,75 m pro Schritt statt fälschlich 750 "mm" direkt.
-                dist_m = max(0, data.distance - self._session_start_dist)
-                steps = int(dist_m / 0.75)
+                # Daher hier _SCHRITT_LAENGE_M statt fälschlich 750 "mm" direkt.
                 self.stat_vars["steps"].set(f"~{steps}")
             else:
                 self.stat_vars["steps"].set(str(steps))
@@ -545,7 +557,7 @@ class TreadmillTrayApp:
             self._session_start_time = datetime.now()
             self._session_target_speed = self.current_speed / 1000
             self._hist_start_dist = data.distance
-            self._hist_start_steps = data.steps
+            self._hist_start_steps = self._steps_for_data(data)
             self._hist_start_calories = data.calories
         elif data.running_state == 3 and prev_state in (0, 1, 2) and self._session_start_time is not None:
             self._save_session(data)
@@ -634,7 +646,8 @@ class TreadmillTrayApp:
             return
 
         distance_delta = max(0, data.distance - (self._hist_start_dist or 0))
-        steps_delta = max(0, data.steps - self._hist_start_steps)
+        total_steps = self._steps_for_data(data)
+        steps_delta = max(0, total_steps - self._hist_start_steps)
         calories_delta = max(0, data.calories - self._hist_start_calories)
         duration_s = max(0, int(data.duration_seconds))
         avg_speed = (distance_delta / 1000) / (duration_s / 3600) if duration_s > 0 else 0.0
