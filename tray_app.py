@@ -647,6 +647,8 @@ class TreadmillTrayApp:
 
         distance_delta = max(0, data.distance - (self._hist_start_dist or 0))
         total_steps = self._steps_for_data(data)
+        if total_steps == 0 and self._hist_start_dist is not None:
+            total_steps = self._hist_start_steps + _estimated_steps_from_distance(distance_delta)
         steps_delta = max(0, total_steps - self._hist_start_steps)
         calories_delta = max(0, data.calories - self._hist_start_calories)
         duration_s = max(0, int(data.duration_seconds))
