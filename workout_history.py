@@ -1,23 +1,17 @@
-"""Persistente Workout-Historie – gespeichert in %APPDATA%/treadmill-tray."""
+"""Persistente Workout-Historie – gespeichert neben der Anwendung."""
 import json
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
+
+from app_paths import app_dir
 
 _MAX_ENTRIES = 200
 LOGGER = logging.getLogger(__name__)
 
 
-def _history_dir() -> Path:
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        return Path(appdata) / "treadmill-tray"
-    return Path.home() / "AppData" / "Roaming" / "treadmill-tray"
-
-
 def _history_file() -> Path:
-    return _history_dir() / "workout_history.json"
+    return app_dir() / "workout_history.json"
 
 
 def load_history() -> list:
@@ -40,9 +34,9 @@ def save_entry(entry: dict) -> None:
     if len(history) > _MAX_ENTRIES:
         history = history[-_MAX_ENTRIES:]
     try:
-        history_dir = _history_dir()
-        history_dir.mkdir(parents=True, exist_ok=True)
-        with open(_history_file(), "w", encoding="utf-8") as f:
+        history_file = _history_file()
+        history_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(history_file, "w", encoding="utf-8") as f:
             json.dump(history, f, indent=2, ensure_ascii=False)
     except Exception as exc:
         LOGGER.warning("Could not save workout history: %s", exc)

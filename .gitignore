@@ -8,6 +8,7 @@ release/
 *.spec.bak
 
 config.json
+workout_history.json
 *.log
 
 # Local screenshots / captures if you add temporary files

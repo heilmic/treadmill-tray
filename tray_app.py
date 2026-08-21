@@ -19,13 +19,15 @@ import pystray
 from PIL import Image, ImageDraw
 from bleak import BleakScanner
 
+from app_paths import app_dir
 from bluetooth_manager_fba import BluetoothManagerFBA as BluetoothManager
 from treadmill_controller import TreadmillController
 from treadmill_data import TreadmillData
 from workout_history import load_history, save_entry, make_entry
 
-CONFIG_FILE = Path(__file__).parent / "config.json"
 LOGGER = logging.getLogger(__name__)
+
+CONFIG_FILE = app_dir() / "config.json"
 
 _SCHRITT_LAENGE_M = 0.51
 
@@ -159,6 +161,7 @@ class TreadmillTrayApp:
 
     def _save_config(self):
         try:
+            CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=2)
         except Exception as exc:
