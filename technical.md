@@ -80,9 +80,10 @@ Expected output:
 
 ## Persistence
 
-Workout history is stored locally in:
-
-- `%APPDATA%/treadmill-tray/workout_history.json`
+Config (`config.json`) and workout history (`workout_history.json`) are
+stored right next to `treadmill-tray.exe` (or next to the script in dev
+mode) — the app is portable, so both files travel with the folder it runs
+from rather than living in `%APPDATA%`.
 
 Stored fields may include:
 - start time
