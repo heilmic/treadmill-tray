@@ -396,7 +396,25 @@ class TreadmillTrayApp:
         else:
             x = root.winfo_x()
             y = root.winfo_y()
+        # Kurzes Umschalten von resizable erzwingt auf manchen Windows-
+        # Systemen (v.a. bei abweichender Anzeigeskalierung) einen echten
+        # Neuzeichnen-Zyklus des Fensterrahmens -- ohne das blieb beim
+        # Verkleinern unten manchmal ein leerer Reststreifen der alten
+        # Fenstergroesse stehen, der nicht sauber weggezeichnet wurde.
+        root.resizable(True, True)
         root.geometry(f"{w}x{h}+{x}+{y}")
+        root.resizable(False, False)
+
+        # Direkt nach dem Pack-Wechsel liefert winfo_reqheight() auf manchen
+        # Systemen noch einen zu grossen Zwischenwert, bevor die Layout-
+        # Engine final durchgerechnet hat. Ein zweiter Messpunkt nach einem
+        # weiteren Idle-Tick korrigiert das.
+        root.update_idletasks()
+        corrected_h = root.winfo_reqheight()
+        if corrected_h != h:
+            root.resizable(True, True)
+            root.geometry(f"{w}x{corrected_h}+{x}+{y}")
+            root.resizable(False, False)
 
     # ------------------------------------------------------------------
     # System Tray
