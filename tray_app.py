@@ -387,9 +387,27 @@ class TreadmillTrayApp:
         # Nutzerin -- programmatisch darf die Fenstergroesse weiterhin an den
         # tatsaechlich benoetigten Platz angepasst werden (z.B. wenn die
         # Verbindungskarte auf eine Zeile zusammenklappt).
+        #
+        # WICHTIG: CTk.geometry() ueberschreibt tkinter's geometry() und
+        # skaliert die uebergebene Breite/Hoehe zusaetzlich mit dem Windows-
+        # Anzeigemassstab (CustomTkinter/windows.py, _apply_geometry_scaling).
+        # winfo_reqheight() liefert aber bereits den realen, schon skalierten
+        # Pixelwert -- mit geometry() wuerde dieser ein zweites Mal skaliert
+        # (bei 125% Anzeigeskalierung also ein 25% zu hohes Fenster, bei 150%
+        # entsprechend mehr). Das eigentliche Problem hinter dem "Fenster
+        # bleibt zu hoch"-Bug. wm_geometry() ist von CTk nicht ueberschrieben
+        # und setzt die Groesse unskaliert, wie winfo_reqheight() sie meldet.
         root = self.root
         root.update_idletasks()
-        w = self._WINDOW_WIDTH
+        try:
+            scale = root._get_window_scaling()
+        except AttributeError:
+            scale = 1.0
+        # _WINDOW_WIDTH ist als logischer (unskalierter) Zielwert gedacht --
+        # wm_geometry() erwartet aber physische Pixel, daher hier manuell mit
+        # demselben Faktor multipliziert, den CTk.geometry() sonst intern
+        # angewendet haette.
+        w = round(self._WINDOW_WIDTH * scale)
         h = root.winfo_reqheight()
         if recenter:
             sw = root.winfo_screenwidth()
@@ -399,14 +417,7 @@ class TreadmillTrayApp:
         else:
             x = root.winfo_x()
             y = root.winfo_y()
-        # Kurzes Umschalten von resizable erzwingt auf manchen Windows-
-        # Systemen (v.a. bei abweichender Anzeigeskalierung) einen echten
-        # Neuzeichnen-Zyklus des Fensterrahmens -- ohne das blieb beim
-        # Verkleinern unten manchmal ein leerer Reststreifen der alten
-        # Fenstergroesse stehen, der nicht sauber weggezeichnet wurde.
-        root.resizable(True, True)
-        root.geometry(f"{w}x{h}+{x}+{y}")
-        root.resizable(False, False)
+        root.wm_geometry(f"{w}x{h}+{x}+{y}")
 
         # Direkt nach dem Pack-Wechsel liefert winfo_reqheight() auf manchen
         # Systemen noch einen zu grossen Zwischenwert, bevor die Layout-
@@ -415,9 +426,7 @@ class TreadmillTrayApp:
         root.update_idletasks()
         corrected_h = root.winfo_reqheight()
         if corrected_h != h:
-            root.resizable(True, True)
-            root.geometry(f"{w}x{corrected_h}+{x}+{y}")
-            root.resizable(False, False)
+            root.wm_geometry(f"{w}x{corrected_h}+{x}+{y}")
 
     # ------------------------------------------------------------------
     # System Tray
