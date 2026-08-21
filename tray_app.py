@@ -5,6 +5,7 @@ Steuert das PitPat Laufband via Bluetooth direkt aus dem System-Tray.
 """
 
 import asyncio
+import ctypes
 import json
 import logging
 import threading
@@ -28,6 +29,8 @@ from workout_history import load_history, save_entry, make_entry
 LOGGER = logging.getLogger(__name__)
 
 CONFIG_FILE = app_dir() / "config.json"
+APP_TITLE = "PitPat Laufband"
+_SINGLE_INSTANCE_MUTEX_NAME = "PitPatTreadmillTray_SingleInstance"
 
 _SCHRITT_LAENGE_M = 0.51
 
@@ -136,7 +139,7 @@ class TreadmillTrayApp:
         self._session_target_speed: float = 0.0
 
         self.root = ctk.CTk()
-        self.root.title("PitPat Laufband")
+        self.root.title(APP_TITLE)
         self.root.configure(fg_color=C_BG)
         self.root.resizable(False, False)
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
@@ -914,6 +917,35 @@ class TreadmillTrayApp:
         self.root.mainloop()
 
 
+# ---------------------------------------------------------------------------
+# Einzelinstanz-Pruefung
+# ---------------------------------------------------------------------------
+
+def _another_instance_is_running() -> bool:
+    """Benannter Windows-Mutex als plattformeigene Sperre ohne Zusatz-Abhaengigkeit.
+
+    Der Mutex bleibt fuer die gesamte Prozesslaufzeit offen und wird von
+    Windows beim Beenden automatisch freigegeben -- auch bei einem Absturz.
+    """
+    ERROR_ALREADY_EXISTS = 183
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateMutexW(None, False, _SINGLE_INSTANCE_MUTEX_NAME)
+    return kernel32.GetLastError() == ERROR_ALREADY_EXISTS
+
+
+def _focus_running_instance():
+    """Holt das Fenster der bereits laufenden Instanz in den Vordergrund."""
+    user32 = ctypes.windll.user32
+    hwnd = user32.FindWindowW(None, APP_TITLE)
+    if hwnd:
+        SW_RESTORE = 9
+        user32.ShowWindow(hwnd, SW_RESTORE)
+        user32.SetForegroundWindow(hwnd)
+
+
 if __name__ == "__main__":
-    app = TreadmillTrayApp()
-    app.run()
+    if _another_instance_is_running():
+        _focus_running_instance()
+    else:
+        app = TreadmillTrayApp()
+        app.run()
