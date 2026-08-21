@@ -178,6 +178,17 @@ class TreadmillTrayApp:
             steps = _estimated_steps_from_distance(data.distance - self._session_start_dist)
         return steps
 
+    def _avg_speed_kmh_for_data(self, data: TreadmillData) -> Optional[float]:
+        """Durchschnittsgeschwindigkeit der laufenden (History-)Session, oder
+        None, solange noch kein Lauf gestartet wurde."""
+        if self._hist_start_dist is None:
+            return None
+        duration_s = max(0, int(data.duration_seconds))
+        if duration_s <= 0:
+            return None
+        distance_delta = max(0, data.distance - self._hist_start_dist)
+        return (distance_delta / 1000) / (duration_s / 3600)
+
     # ------------------------------------------------------------------
     # UI-Aufbau
     # ------------------------------------------------------------------
@@ -280,13 +291,13 @@ class TreadmillTrayApp:
         stats.pack(fill="x", padx=PAD, pady=(0, 8))
 
         self.stat_vars: dict[str, tk.StringVar] = {}
-        # data.current_speed ist der vom Laufband live gemeldete Ist-Wert,
-        # kein berechneter Durchschnitt -- daher die explizite Beschriftung.
+        # Durchschnittsgeschwindigkeit der laufenden Session (Distanz seit
+        # Sessionstart / vergangene Zeit) -- nicht der momentane Ist-Wert.
         defs = [
             ("duration", "Dauer",                      "00:00:00", 0, 0, 2),
             ("steps",    "Schritte",                    "—",        1, 0, 1),
             ("distance", "Distanz",                     "—  km",    1, 1, 1),
-            ("speed",    "Geschwindigkeit (aktuell)",   "—  km/h",  2, 0, 1),
+            ("speed",    "Geschwindigkeit (Ø)",         "—  km/h",  2, 0, 1),
             ("calories", "Kalorien",                    "—  kcal",  2, 1, 1),
         ]
         for key, title, init, row, col, cspan in defs:
@@ -545,7 +556,11 @@ class TreadmillTrayApp:
             speed_unit = "mph" if data.unit_mode == 1 else "km/h"
             dist_unit  = "mi"  if data.unit_mode == 1 else "km"
 
-            self.stat_vars["speed"].set(f"{data.current_speed / 1000:.1f}  {speed_unit}")
+            avg_speed = self._avg_speed_kmh_for_data(data)
+            if avg_speed is None:
+                self.stat_vars["speed"].set(f"—  {speed_unit}")
+            else:
+                self.stat_vars["speed"].set(f"{avg_speed:.1f}  {speed_unit}")
             self.stat_vars["distance"].set(f"{data.distance / 1000:.2f}  {dist_unit}")
             self.stat_vars["calories"].set(f"{data.calories}  kcal")
 
@@ -753,7 +768,7 @@ class TreadmillTrayApp:
         steps_delta = max(0, total_steps - self._hist_start_steps)
         calories_delta = max(0, data.calories - self._hist_start_calories)
         duration_s = max(0, int(data.duration_seconds))
-        avg_speed = (distance_delta / 1000) / (duration_s / 3600) if duration_s > 0 else 0.0
+        avg_speed = self._avg_speed_kmh_for_data(data) or 0.0
 
         entry = make_entry(
             start_time=self._session_start_time,
@@ -767,13 +782,43 @@ class TreadmillTrayApp:
         )
         save_entry(entry)
 
+    _HISTORY_COLUMNS = (
+        # (Titel, Breite in px, Ausrichtung)
+        ("Datum",      132, "w"),
+        ("Dauer",       68, "e"),
+        ("Distanz",     72, "e"),
+        ("Schritte",    68, "e"),
+        ("Kalorien",    78, "e"),
+        ("Ø km/h",      64, "e"),
+    )
+
+    @staticmethod
+    def _format_history_date(raw: str) -> str:
+        try:
+            return datetime.fromisoformat(raw).strftime("%d.%m.%Y %H:%M")
+        except Exception:
+            return str(raw)
+
+    @classmethod
+    def _history_row_values(cls, item: dict) -> tuple:
+        duration_s = int(item.get("duration_s", 0))
+        h, m, s = duration_s // 3600, (duration_s % 3600) // 60, duration_s % 60
+        return (
+            cls._format_history_date(item.get("start_time", "")),
+            f"{h:02d}:{m:02d}:{s:02d}",
+            f"{item.get('distance_km', 0):.2f} km",
+            str(item.get("steps", 0)),
+            f"{item.get('calories', 0)} kcal",
+            f"{item.get('avg_speed_kmh', 0):.1f}",
+        )
+
     def _show_history(self):
         history = list(reversed(load_history()))
 
         win = ctk.CTkToplevel(self.root)
         win.title("Workout-Historie")
         win.configure(fg_color=C_BG)
-        win.geometry("520x460")
+        win.geometry("680x480")
         win.transient(self.root)
 
         header = ctk.CTkFrame(win, fg_color="transparent")
@@ -781,44 +826,86 @@ class TreadmillTrayApp:
         ctk.CTkLabel(header, text="Letzte Läufe", font=_font(12, "bold"),
                      text_color=C_FG).pack(side="left")
         ctk.CTkLabel(header, text=f"{len(history)} Einträge", font=_font(9),
-                     text_color=C_MUTED).pack(side="right")
+                     text_color=C_MUTED).pack(side="left", padx=(10, 0))
 
-        body = ctk.CTkScrollableFrame(win, fg_color=C_CARD, corner_radius=10)
-        body.pack(fill="both", expand=True, padx=14, pady=(0, 10))
+        copy_btn = ctk.CTkButton(
+            header, text="📋 Kopieren",
+            fg_color="transparent", hover_color=C_PANEL, text_color=C_MUTED,
+            border_width=1, border_color=C_PANEL,
+            font=_font(9), corner_radius=6, width=90, height=26
+        )
+        copy_btn.pack(side="right")
+
+        def do_copy():
+            lines = ["\t".join(title for title, _, _ in self._HISTORY_COLUMNS)]
+            for item in history:
+                lines.append("\t".join(self._history_row_values(item)))
+            win.clipboard_clear()
+            win.clipboard_append("\n".join(lines))
+            win.update()
+            copy_btn.configure(text="✓ Kopiert")
+            win.after(1500, lambda: copy_btn.configure(text="📋 Kopieren"))
+
+        copy_btn.configure(command=do_copy)
 
         if not history:
+            copy_btn.configure(state="disabled")
+            body = ctk.CTkFrame(win, fg_color=C_CARD, corner_radius=10)
+            body.pack(fill="both", expand=True, padx=14, pady=(0, 10))
             ctk.CTkLabel(
                 body, justify="left", text_color=C_MUTED, font=_font(10),
                 text="Noch keine Läufe gespeichert.\n\nSobald du ein Workout startest "
                      "und wieder stoppst, erscheint es hier."
             ).pack(padx=10, pady=10, anchor="w")
         else:
-            for idx, item in enumerate(history[:30], start=1):
-                started = item.get("start_time", "")
-                try:
-                    started = datetime.fromisoformat(started).strftime("%d.%m.%Y %H:%M")
-                except Exception:
-                    started = str(started)
-                duration_s = int(item.get("duration_s", 0))
-                h, m, s = duration_s // 3600, (duration_s % 3600) // 60, duration_s % 60
-                duration = f"{h:02d}:{m:02d}:{s:02d}"
-
-                row = ctk.CTkFrame(body, fg_color=C_PANEL, corner_radius=8)
-                row.pack(fill="x", padx=4, pady=3)
-                inner = ctk.CTkFrame(row, fg_color="transparent")
-                inner.pack(fill="x", padx=10, pady=8)
-
-                ctk.CTkLabel(inner, text=f"{idx:02d}. {started}", font=_font(10, "bold"),
-                             text_color=C_FG, anchor="w").pack(fill="x")
+            # Tabellen-Kopfzeile bleibt fix stehen, nur die Datenzeilen scrollen --
+            # daher eigener Frame statt Teil der CTkScrollableFrame.
+            table_hdr = ctk.CTkFrame(win, fg_color=C_PANEL, corner_radius=8)
+            table_hdr.pack(fill="x", padx=14)
+            hdr_inner = ctk.CTkFrame(table_hdr, fg_color="transparent")
+            hdr_inner.pack(fill="x", padx=8, pady=6)
+            for title, width, anchor in self._HISTORY_COLUMNS:
                 ctk.CTkLabel(
-                    inner, anchor="w", justify="left", text_color=C_MUTED,
-                    font=_font(9, family="Consolas"),
-                    text=(f"Dauer {duration}  |  Distanz {item.get('distance_km', 0):.2f} km  "
-                          f"|  Schritte {item.get('steps', 0)}\n"
-                          f"Kalorien {item.get('calories', 0)} kcal  "
-                          f"|  Ø {item.get('avg_speed_kmh', 0):.1f} km/h  "
-                          f"|  Ziel {item.get('target_speed_kmh', 0):.1f} km/h")
-                ).pack(fill="x", pady=(2, 0))
+                    hdr_inner, text=title, width=width, anchor=anchor,
+                    font=_font(9, "bold"), text_color=C_MUTED
+                ).pack(side="left", padx=4)
+            ctk.CTkLabel(hdr_inner, text="", width=30).pack(side="left", padx=(8, 4))
+
+            body = ctk.CTkScrollableFrame(win, fg_color=C_CARD, corner_radius=10)
+            body.pack(fill="both", expand=True, padx=14, pady=(4, 10))
+
+            header_line = "\t".join(title for title, _, _ in self._HISTORY_COLUMNS)
+
+            def copy_row(item, btn):
+                value_line = "\t".join(self._history_row_values(item))
+                win.clipboard_clear()
+                win.clipboard_append(f"{header_line}\n{value_line}")
+                win.update()
+                btn.configure(text="✓")
+                win.after(1200, lambda: btn.configure(text="📋"))
+
+            for idx, item in enumerate(history[:30]):
+                row_bg = C_PANEL if idx % 2 == 0 else "transparent"
+                row = ctk.CTkFrame(body, fg_color=row_bg, corner_radius=6)
+                row.pack(fill="x", pady=1)
+                row_inner = ctk.CTkFrame(row, fg_color="transparent")
+                row_inner.pack(fill="x", padx=8, pady=6)
+                values = self._history_row_values(item)
+                for (value, (_, width, anchor)) in zip(values, self._HISTORY_COLUMNS):
+                    ctk.CTkLabel(
+                        row_inner, text=value, width=width, anchor=anchor,
+                        font=_font(10), text_color=C_FG
+                    ).pack(side="left", padx=4)
+
+                row_copy_btn = ctk.CTkButton(
+                    row_inner, text="📋", width=30, height=24,
+                    fg_color="transparent", hover_color=C_ACCENT_H, text_color=C_MUTED,
+                    font=_font(10), corner_radius=6
+                )
+                row_copy_btn.pack(side="left", padx=(8, 4))
+                row_copy_btn.configure(
+                    command=lambda item=item, btn=row_copy_btn: copy_row(item, btn)
+                )
 
         btn_row = ctk.CTkFrame(win, fg_color="transparent")
         btn_row.pack(fill="x", padx=14, pady=(0, 14))
