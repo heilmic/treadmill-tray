@@ -21,7 +21,7 @@ Current release:
 - https://github.com/heilmic/treadmill-tray/releases/latest
 
 Current release file in this repo:
-- `release/treadmill-tray-v0.1.2-win64.zip`
+- `release/treadmill-tray-v0.2.0-win64.zip`
 
 ## English
 

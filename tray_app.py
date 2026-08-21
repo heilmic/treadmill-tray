@@ -14,7 +14,7 @@ from typing import Optional
 from pathlib import Path
 from datetime import datetime
 
-
+import customtkinter as ctk
 import pystray
 from PIL import Image, ImageDraw
 from bleak import BleakScanner
@@ -27,27 +27,39 @@ from workout_history import load_history, save_entry, make_entry
 CONFIG_FILE = Path(__file__).parent / "config.json"
 LOGGER = logging.getLogger(__name__)
 
-# Kalibrierter Schätzwert: 50 gezählte Schritte wurden bei 0,75 m/Schritt nur
-# als 34 gemeldet. Realistischere Schrittlänge laut Messung: ~0,51 m/Schritt.
 _SCHRITT_LAENGE_M = 0.51
 
 
 def _estimated_steps_from_distance(dist_m: int) -> int:
     return int(max(0, dist_m) / _SCHRITT_LAENGE_M)
 
-# --- Farben (Dark Theme) ---
-C_BG     = "#1a1b2e"
-C_CARD   = "#16213e"
-C_PANEL  = "#0f3460"
-C_FG     = "#e0e0e0"
-C_MUTED  = "#777"
-C_ACCENT = "#4a9eff"
-C_GREEN  = "#4CAF50"
-C_YELLOW = "#FF9800"
-C_RED    = "#f44336"
+
+# --- Farben (dezentes Dark Theme, entsaettigt) ---
+C_BG      = "#1c1d22"
+C_CARD    = "#24252c"
+C_PANEL   = "#2d2f38"
+C_FG      = "#d6d6da"
+C_MUTED   = "#84868f"
+C_ACCENT  = "#5b7fa6"
+C_ACCENT_H = "#4d6c8f"
+C_GREEN   = "#5a9e6f"
+C_GREEN_H = "#4c8a5f"
+C_YELLOW  = "#c99a4a"
+C_YELLOW_H = "#b3863c"
+C_RED     = "#b5555a"
+C_RED_H   = "#9c464b"
 
 STATE_NAMES  = {0: "Startet", 1: "Läuft", 2: "Pausiert", 3: "Gestoppt"}
 STATE_COLORS = {0: C_YELLOW, 1: C_GREEN, 2: C_YELLOW, 3: C_MUTED}
+
+ctk.set_appearance_mode("dark")
+
+
+def _font(size: int, weight: str = "normal", family: str = "Segoe UI") -> ctk.CTkFont:
+    # CTkFont (statt eines rohen Font-Tupels) sorgt fuer korrektes
+    # DPI-/Widget-Scaling -- mit rohen Tupeln wirkte fette, groessere
+    # Schrift (z.B. der Titel) auf manchen Systemen "gestaucht".
+    return ctk.CTkFont(family=family, size=size, weight=weight)
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +113,8 @@ def _make_tray_icon(color: str, size: int = 64) -> Image.Image:
 # ---------------------------------------------------------------------------
 
 class TreadmillTrayApp:
+    _WINDOW_WIDTH = 360
+
     def __init__(self):
         self.manager: Optional[BluetoothManager] = None
         self.treadmill_data: Optional[TreadmillData] = None
@@ -119,15 +133,16 @@ class TreadmillTrayApp:
         self._hist_start_calories: int = 0
         self._session_target_speed: float = 0.0
 
-        self.root = tk.Tk()
+        self.root = ctk.CTk()
         self.root.title("PitPat Laufband")
-        self.root.configure(bg=C_BG)
+        self.root.configure(fg_color=C_BG)
         self.root.resizable(False, False)
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
 
         self._build_ui()
         self._setup_tray()
         self._update_loop()
+        self.root.after(400, self._maybe_autoconnect)
 
     # ------------------------------------------------------------------
     # Konfiguration
@@ -158,182 +173,230 @@ class TreadmillTrayApp:
         return steps
 
     # ------------------------------------------------------------------
-    # UI-Hilfsmethoden
-    # ------------------------------------------------------------------
-
-    def _lbl(self, parent, text, font=("Segoe UI", 9), fg=C_MUTED, **kw):
-        kw.setdefault("bg", parent["bg"])
-        return tk.Label(parent, text=text, font=font, fg=fg, **kw)
-
-    def _btn(self, parent, text, cmd, bg=C_PANEL, fg=C_FG, font=("Segoe UI", 10),
-             width=None, state="normal", pady=6, **kw):
-        kw.setdefault("activebackground", bg)
-        kw.setdefault("activeforeground", fg)
-        b = tk.Button(
-            parent, text=text, command=cmd,
-            bg=bg, fg=fg, relief="flat", font=font,
-            cursor="hand2", state=state, pady=pady,
-            **kw
-        )
-        if width:
-            b.config(width=width)
-        return b
-
-    # ------------------------------------------------------------------
     # UI-Aufbau
     # ------------------------------------------------------------------
 
     def _build_ui(self):
         root = self.root
-        PAD = 10
+        PAD = 12
 
-        # ── Kopfzeile ──────────────────────────────────────────────
-        hdr = tk.Frame(root, bg=C_BG, pady=8)
-        hdr.pack(fill="x", padx=PAD)
+        # -- Kopfzeile --
+        hdr = ctk.CTkFrame(root, fg_color="transparent")
+        hdr.pack(fill="x", padx=PAD, pady=(PAD, 6))
 
-        self._lbl(hdr, "🏃 PitPat Laufband", font=("Segoe UI", 13, "bold"),
-                  fg=C_FG).pack(side="left")
+        ctk.CTkLabel(
+            hdr, text="PitPat Laufband",
+            font=_font(14, "bold"), text_color=C_FG
+        ).pack(side="left")
 
-        self.status_lbl = tk.Label(
-            hdr, text="⬤  Nicht verbunden",
-            font=("Segoe UI", 9), bg=C_BG, fg=C_RED
+        self.status_lbl = ctk.CTkLabel(
+            hdr, text="●  Nicht verbunden",
+            font=_font(10), text_color=C_MUTED
         )
         self.status_lbl.pack(side="right")
 
-        # ── Verbindungs-Panel ──────────────────────────────────────
-        conn = tk.Frame(root, bg=C_CARD, padx=PAD, pady=PAD)
-        conn.pack(fill="x", padx=PAD, pady=(0, 6))
+        # -- Verbindungs-Karte --
+        # Zwei Ansichten: die volle Karte (Adresse/Suchen/Verbinden) wird nur
+        # benoetigt, solange keine Verbindung besteht. Sobald verbunden ist,
+        # ersetzt eine einzeilige, kompakte Ansicht die Karte -- der
+        # Verbindungsstatus selbst steht bereits in der Kopfzeile.
+        conn = ctk.CTkFrame(root, fg_color=C_CARD, corner_radius=10)
+        conn.pack(fill="x", padx=PAD, pady=(0, 8))
+        self._conn_card = conn
+        self._conn_expanded = True
 
-        addr_row = tk.Frame(conn, bg=C_CARD)
+        self._auto_connect_var = tk.BooleanVar(value=bool(self.config.get("auto_connect", False)))
+
+        # -- Volle Ansicht (nicht verbunden) --
+        self.conn_full = ctk.CTkFrame(conn, fg_color="transparent")
+        self.conn_full.pack(fill="x", padx=12, pady=12)
+
+        addr_row = ctk.CTkFrame(self.conn_full, fg_color="transparent")
         addr_row.pack(fill="x")
 
         self.addr_var = tk.StringVar(value=self.config.get("last_address", ""))
-        self.addr_entry = tk.Entry(
+        self.addr_entry = ctk.CTkEntry(
             addr_row, textvariable=self.addr_var,
-            font=("Consolas", 10), bg="#0d1b2a", fg=C_FG,
-            insertbackground=C_FG, relief="flat", bd=5, width=22
+            font=_font(10, family="Consolas"), fg_color="#15161a", text_color=C_FG,
+            border_width=0, corner_radius=6
         )
         self.addr_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
 
-        self.scan_btn = self._btn(addr_row, "Suchen", self._scan_devices,
-                                   font=("Segoe UI", 9), pady=4, padx=6)
+        self.scan_btn = ctk.CTkButton(
+            addr_row, text="Suchen", command=self._scan_devices,
+            font=_font(9), fg_color="transparent",
+            hover_color=C_PANEL, text_color=C_MUTED,
+            border_width=1, border_color=C_PANEL,
+            corner_radius=6, width=70, height=28
+        )
         self.scan_btn.pack(side="right")
 
-        self.connect_btn = self._btn(
-            conn, "Verbinden", self._toggle_connect,
-            bg=C_ACCENT, fg="#fff", font=("Segoe UI", 10, "bold"),
-            pady=7, activebackground="#2070cc"
+        self.connect_btn = ctk.CTkButton(
+            self.conn_full, text="Verbinden", command=self._toggle_connect,
+            fg_color=C_ACCENT, hover_color=C_ACCENT_H, text_color="#fff",
+            font=_font(10, "bold"), corner_radius=6, height=34
         )
-        self.connect_btn.pack(fill="x", pady=(8, 0))
+        self.connect_btn.pack(fill="x", pady=(8, 8))
 
-        # ── Statistik-Karten ───────────────────────────────────────
-        stats = tk.Frame(root, bg=C_BG)
-        stats.pack(fill="x", padx=PAD, pady=(0, 6))
+        autoconn_row = ctk.CTkFrame(self.conn_full, fg_color="transparent")
+        autoconn_row.pack(fill="x")
+        self.autoconn_switch = ctk.CTkSwitch(
+            autoconn_row, text="Beim Start automatisch verbinden",
+            variable=self._auto_connect_var, command=self._on_autoconnect_toggle,
+            font=_font(9), text_color=C_MUTED,
+            progress_color=C_ACCENT, button_color=C_FG, button_hover_color=C_FG,
+            fg_color=C_PANEL
+        )
+        self.autoconn_switch.pack(side="left")
+
+        # -- Kompakte Ansicht (verbunden): nur noch eine Zeile --
+        self.conn_compact = ctk.CTkFrame(conn, fg_color="transparent")
+
+        self.autoconn_switch_compact = ctk.CTkSwitch(
+            self.conn_compact, text="Auto-Connect",
+            variable=self._auto_connect_var, command=self._on_autoconnect_toggle,
+            font=_font(9), text_color=C_MUTED,
+            progress_color=C_ACCENT, button_color=C_FG, button_hover_color=C_FG,
+            fg_color=C_PANEL
+        )
+        self.autoconn_switch_compact.pack(side="left", padx=12, pady=10)
+
+        self.disconnect_btn = ctk.CTkButton(
+            self.conn_compact, text="Trennen", command=self._toggle_connect,
+            fg_color="transparent", hover_color=C_PANEL, text_color=C_MUTED,
+            border_width=1, border_color=C_PANEL,
+            font=_font(9), corner_radius=6, width=70, height=28
+        )
+        self.disconnect_btn.pack(side="right", padx=12, pady=10)
+
+        # -- Statistik-Karten --
+        stats = ctk.CTkFrame(root, fg_color="transparent")
+        stats.pack(fill="x", padx=PAD, pady=(0, 8))
 
         self.stat_vars: dict[str, tk.StringVar] = {}
-        #              key         Titel             Init        row col cspan
+        # data.current_speed ist der vom Laufband live gemeldete Ist-Wert,
+        # kein berechneter Durchschnitt -- daher die explizite Beschriftung.
         defs = [
-            ("speed",    "Geschwindigkeit", "—  km/h",  0, 0, 1),
-            ("distance", "Distanz",         "—  km",    0, 1, 1),
-            ("duration", "Dauer",           "00:00:00", 0, 2, 1),
-            ("steps",    "Schritte",        "—",        1, 0, 1),
-            ("calories", "Kalorien",        "—  kcal",  1, 1, 2),
+            ("duration", "Dauer",                      "00:00:00", 0, 0, 2),
+            ("steps",    "Schritte",                    "—",        1, 0, 1),
+            ("distance", "Distanz",                     "—  km",    1, 1, 1),
+            ("speed",    "Geschwindigkeit (aktuell)",   "—  km/h",  2, 0, 1),
+            ("calories", "Kalorien",                    "—  kcal",  2, 1, 1),
         ]
         for key, title, init, row, col, cspan in defs:
-            card = tk.Frame(stats, bg=C_CARD, padx=10, pady=8)
+            card = ctk.CTkFrame(stats, fg_color=C_CARD, corner_radius=10)
             card.grid(row=row, column=col, columnspan=cspan,
                       padx=3, pady=3, sticky="nsew")
             stats.columnconfigure(col, weight=1)
-            self._lbl(card, title).pack()
+            inner = ctk.CTkFrame(card, fg_color="transparent")
+            inner.pack(padx=10, pady=8)
+            ctk.CTkLabel(inner, text=title, font=_font(9), text_color=C_MUTED).pack()
             v = tk.StringVar(value=init)
             self.stat_vars[key] = v
-            tk.Label(card, textvariable=v,
-                     font=("Segoe UI", 12, "bold"),
-                     bg=C_CARD, fg=C_FG).pack()
+            ctk.CTkLabel(inner, textvariable=v, font=_font(20, "bold"),
+                         text_color=C_FG).pack()
 
-        # ── Geschwindigkeit: Direkt-Buttons 1–6 + Feinschritte ─────
-        spd_frame = tk.Frame(root, bg=C_CARD, padx=PAD, pady=8)
-        spd_frame.pack(fill="x", padx=PAD, pady=(0, 6))
+        # -- Geschwindigkeit: Direkt-Buttons 1–6 + Feinschritte ─────
+        spd_frame = ctk.CTkFrame(root, fg_color=C_CARD, corner_radius=10)
+        spd_frame.pack(fill="x", padx=PAD, pady=(0, 8))
+        spd_inner = ctk.CTkFrame(spd_frame, fg_color="transparent")
+        spd_inner.pack(fill="x", padx=12, pady=10)
 
-        # Header-Zeile mit Zielgeschwindigkeit
-        spd_hdr = tk.Frame(spd_frame, bg=C_CARD)
-        spd_hdr.pack(fill="x", pady=(0, 6))
-        self._lbl(spd_hdr, "Zielgeschwindigkeit", bg=C_CARD).pack(side="left")
+        spd_hdr = ctk.CTkFrame(spd_inner, fg_color="transparent")
+        spd_hdr.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(spd_hdr, text="Zielgeschwindigkeit", font=_font(9),
+                     text_color=C_MUTED).pack(side="left")
         self.target_speed_var = tk.StringVar(value="1,0  km/h")
-        tk.Label(
-            spd_hdr, textvariable=self.target_speed_var,
-            font=("Segoe UI", 11, "bold"), bg=C_CARD, fg=C_ACCENT
-        ).pack(side="right")
+        ctk.CTkLabel(spd_hdr, textvariable=self.target_speed_var,
+                     font=_font(11, "bold"), text_color=C_ACCENT).pack(side="right")
 
-        # Direkt-Buttons 1–6 km/h
-        km_row = tk.Frame(spd_frame, bg=C_CARD)
+        km_row = ctk.CTkFrame(spd_inner, fg_color="transparent")
         km_row.pack(fill="x")
-        self._speed_btns: dict[int, tk.Button] = {}
+        self._speed_btns: dict[int, ctk.CTkButton] = {}
         for kmh in range(1, 7):
             sp = kmh * 1000
-            btn = self._btn(
-                km_row, str(kmh), lambda s=sp: self._set_speed_direct(s),
-                bg=C_PANEL, fg=C_FG,
-                font=("Segoe UI", 12, "bold"), pady=6, state="disabled"
+            btn = ctk.CTkButton(
+                km_row, text=str(kmh), command=lambda s=sp: self._set_speed_direct(s),
+                fg_color=C_PANEL, hover_color=C_ACCENT_H, text_color=C_FG,
+                font=_font(11, "bold"), corner_radius=6, height=36, width=30,
+                state="disabled"
             )
             btn.pack(side="left", expand=True, fill="x", padx=1)
             self._speed_btns[sp] = btn
 
-        # Feinschritte ±0,1 km/h
-        micro_row = tk.Frame(spd_frame, bg=C_CARD)
+        micro_row = ctk.CTkFrame(spd_inner, fg_color="transparent")
         micro_row.pack(fill="x", pady=(6, 0))
 
-        self.speed_down01_btn = self._btn(
-            micro_row, "− 0,1", self._speed_down01,
-            font=("Segoe UI", 10), pady=4, state="disabled"
+        self.speed_down01_btn = ctk.CTkButton(
+            micro_row, text="− 0,1", command=self._speed_down01,
+            fg_color=C_PANEL, hover_color=C_ACCENT_H, text_color=C_FG,
+            font=_font(9), corner_radius=6, height=28, state="disabled"
         )
         self.speed_down01_btn.pack(side="left", expand=True, fill="x", padx=(0, 2))
 
-        self.speed_up01_btn = self._btn(
-            micro_row, "+ 0,1", self._speed_up01,
-            font=("Segoe UI", 10), pady=4, state="disabled"
+        self.speed_up01_btn = ctk.CTkButton(
+            micro_row, text="+ 0,1", command=self._speed_up01,
+            fg_color=C_PANEL, hover_color=C_ACCENT_H, text_color=C_FG,
+            font=_font(9), corner_radius=6, height=28, state="disabled"
         )
         self.speed_up01_btn.pack(side="right", expand=True, fill="x", padx=(2, 0))
 
-        # ── Steuer-Buttons ─────────────────────────────────────────
-        ctrl = tk.Frame(root, bg=C_BG)
-        ctrl.pack(fill="x", padx=PAD, pady=(0, 4))
+        # -- Steuer-Buttons --
+        ctrl = ctk.CTkFrame(root, fg_color="transparent")
+        ctrl.pack(fill="x", padx=PAD, pady=(0, 6))
 
-        self.start_btn = self._btn(
-            ctrl, "Start", self._toggle_start,
-            bg=C_GREEN, fg="#fff", font=("Segoe UI", 11, "bold"),
-            pady=8, state="disabled", activebackground="#2d8a30"
+        self.start_btn = ctk.CTkButton(
+            ctrl, text="Start", command=self._toggle_start,
+            fg_color=C_GREEN, hover_color=C_GREEN_H, text_color="#fff",
+            font=_font(11, "bold"), corner_radius=6, height=38, state="disabled"
         )
         self.start_btn.pack(side="left", expand=True, fill="x", padx=(0, 4))
 
-        self.stop_btn = self._btn(
-            ctrl, "Stop", self._stop,
-            bg=C_RED, fg="#fff", font=("Segoe UI", 11, "bold"),
-            pady=8, state="disabled", activebackground="#c62828"
+        self.stop_btn = ctk.CTkButton(
+            ctrl, text="Stop", command=self._stop,
+            fg_color=C_RED, hover_color=C_RED_H, text_color="#fff",
+            font=_font(11, "bold"), corner_radius=6, height=38, state="disabled"
         )
         self.stop_btn.pack(side="right", expand=True, fill="x", padx=(4, 0))
 
-        # ── Ton + Historie ─────────────────────────────────────────
-        sound_row = tk.Frame(root, bg=C_BG)
+        # -- Ton + Historie --
+        sound_row = ctk.CTkFrame(root, fg_color="transparent")
         sound_row.pack(fill="x", padx=PAD, pady=(0, PAD))
 
-        self.sound_btn = self._btn(
-            sound_row, "🔕 Stummschalten", self._toggle_sound,
-            bg=C_PANEL, fg=C_FG, font=("Segoe UI", 10),
-            pady=6, state="disabled"
+        self.sound_btn = ctk.CTkButton(
+            sound_row, text="Stummschalten", command=self._toggle_sound,
+            fg_color=C_PANEL, hover_color=C_ACCENT_H, text_color=C_FG,
+            font=_font(9), corner_radius=6, height=32, state="disabled"
         )
         self.sound_btn.pack(side="left", fill="x", expand=True, padx=(0, 4))
 
-        self._btn(
-            sound_row, "📋 Historie", self._show_history,
-            bg=C_PANEL, fg=C_FG, font=("Segoe UI", 10), pady=6
-        ).pack(side="right", padx=(0, 0))
+        ctk.CTkButton(
+            sound_row, text="Historie", command=self._show_history,
+            fg_color="transparent", hover_color=C_PANEL, text_color=C_MUTED,
+            border_width=1, border_color=C_PANEL,
+            font=_font(9), corner_radius=6, height=32
+        ).pack(side="right", fill="x", expand=True, padx=(4, 0))
 
-        # Fenster zentrieren
-        w, h = 360, 560
-        sw = root.winfo_screenwidth()
-        sh = root.winfo_screenheight()
-        root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
+        self._autosize_window(recenter=True)
+
+    def _autosize_window(self, recenter: bool = False):
+        # resizable(False, False) verhindert nur manuelles Ziehen durch die
+        # Nutzerin -- programmatisch darf die Fenstergroesse weiterhin an den
+        # tatsaechlich benoetigten Platz angepasst werden (z.B. wenn die
+        # Verbindungskarte auf eine Zeile zusammenklappt).
+        root = self.root
+        root.update_idletasks()
+        w = self._WINDOW_WIDTH
+        h = root.winfo_reqheight()
+        if recenter:
+            sw = root.winfo_screenwidth()
+            sh = root.winfo_screenheight()
+            x = (sw - w) // 2
+            y = (sh - h) // 2
+        else:
+            x = root.winfo_x()
+            y = root.winfo_y()
+        root.geometry(f"{w}x{h}+{x}+{y}")
 
     # ------------------------------------------------------------------
     # System Tray
@@ -388,6 +451,31 @@ class TreadmillTrayApp:
         self.root.lift()
         self.root.focus_force()
 
+    def _set_connection_view(self, expanded: bool):
+        if self._conn_expanded == expanded:
+            return
+        self._conn_expanded = expanded
+        if expanded:
+            self.conn_compact.pack_forget()
+            self.conn_full.pack(fill="x", padx=12, pady=12)
+        else:
+            self.conn_full.pack_forget()
+            self.conn_compact.pack(fill="x")
+        self._autosize_window()
+
+    # ------------------------------------------------------------------
+    # Auto-Connect
+    # ------------------------------------------------------------------
+
+    def _on_autoconnect_toggle(self):
+        self.config["auto_connect"] = bool(self._auto_connect_var.get())
+        self._save_config()
+
+    def _maybe_autoconnect(self):
+        addr = self.addr_var.get().strip()
+        if self.config.get("auto_connect") and addr and not self.connected:
+            self._connect(addr)
+
     # ------------------------------------------------------------------
     # Periodische UI-Aktualisierung
     # ------------------------------------------------------------------
@@ -398,51 +486,38 @@ class TreadmillTrayApp:
 
     def _refresh_ui(self):
         data = self.treadmill_data
+        self._set_connection_view(expanded=not self.connected)
 
         if not self.connected:
-            self.status_lbl.config(text="⬤  Nicht verbunden", fg=C_RED)
-            self.connect_btn.config(text="Verbinden", bg=C_ACCENT,
-                                    activebackground="#2070cc", state="normal")
-            self.addr_entry.config(state="normal")
-            self.scan_btn.config(state="normal")
+            self.status_lbl.configure(text="●  Nicht verbunden", text_color=C_MUTED)
+            self.connect_btn.configure(text="Verbinden", fg_color=C_ACCENT,
+                                        hover_color=C_ACCENT_H, state="normal")
+            self.addr_entry.configure(state="normal")
+            self.scan_btn.configure(state="normal")
             self._set_controls("disabled")
             return
 
-        # Verbunden
-        self.addr_entry.config(state="disabled")
-        self.scan_btn.config(state="disabled")
-        self.connect_btn.config(text="Trennen", bg=C_RED,
-                                activebackground="#c62828", state="normal")
-
         state_name  = STATE_NAMES.get(self.running_state, "Verbunden")
         state_color = STATE_COLORS.get(self.running_state, C_ACCENT)
-        self.status_lbl.config(text=f"⬤  {state_name}", fg=state_color)
+        self.status_lbl.configure(text=f"●  {state_name}", text_color=state_color)
 
         self._set_controls("normal")
 
         if self.running_state == 1:
-            self.start_btn.config(text="Pause", bg=C_YELLOW,
-                                  activebackground="#c68a00")
+            self.start_btn.configure(text="Pause", fg_color=C_YELLOW, hover_color=C_YELLOW_H)
         else:
-            self.start_btn.config(text="Start", bg=C_GREEN,
-                                  activebackground="#2d8a30")
+            self.start_btn.configure(text="Start", fg_color=C_GREEN, hover_color=C_GREEN_H)
 
         if data:
             speed_unit = "mph" if data.unit_mode == 1 else "km/h"
             dist_unit  = "mi"  if data.unit_mode == 1 else "km"
 
-            self.stat_vars["speed"].set(
-                f"{data.current_speed / 1000:.1f}  {speed_unit}"
-            )
-            self.stat_vars["distance"].set(
-                f"{data.distance / 1000:.2f}  {dist_unit}"
-            )
+            self.stat_vars["speed"].set(f"{data.current_speed / 1000:.1f}  {speed_unit}")
+            self.stat_vars["distance"].set(f"{data.distance / 1000:.2f}  {dist_unit}")
             self.stat_vars["calories"].set(f"{data.calories}  kcal")
 
             steps = self._steps_for_data(data)
             if data.steps == 0 and data.real_electricity_steps is None and self._session_start_dist is not None:
-                # data.distance wird in der UI als Meter behandelt (÷1000 => km).
-                # Daher hier _SCHRITT_LAENGE_M statt fälschlich 750 "mm" direkt.
                 self.stat_vars["steps"].set(f"~{steps}")
             else:
                 self.stat_vars["steps"].set(str(steps))
@@ -456,9 +531,9 @@ class TreadmillTrayApp:
         # Aktiven km/h-Button hervorheben
         for sp, btn in self._speed_btns.items():
             if sp == self.current_speed:
-                btn.config(bg=C_ACCENT, fg="#fff", activebackground="#2070cc")
+                btn.configure(fg_color=C_ACCENT, text_color="#fff", hover_color=C_ACCENT_H)
             else:
-                btn.config(bg=C_PANEL, fg=C_FG, activebackground=C_PANEL)
+                btn.configure(fg_color=C_PANEL, text_color=C_FG, hover_color=C_ACCENT_H)
 
         # Ton-Status aus Notification-Daten (Byte 47, Bit 0)
         if data and data.buzzer_control is not None:
@@ -469,12 +544,12 @@ class TreadmillTrayApp:
         for btn in (self.start_btn, self.stop_btn,
                     self.speed_up01_btn, self.speed_down01_btn,
                     self.sound_btn):
-            btn.config(state=state)
+            btn.configure(state=state)
         for sp, btn in self._speed_btns.items():
             if state == "disabled":
-                btn.config(state=state, bg=C_PANEL, fg=C_FG)
+                btn.configure(state=state, fg_color=C_PANEL, text_color=C_FG)
             else:
-                btn.config(state=state)
+                btn.configure(state=state)
 
     # ------------------------------------------------------------------
     # Bluetooth
@@ -494,7 +569,7 @@ class TreadmillTrayApp:
             self._connect(addr)
 
     def _connect(self, address: str):
-        self.connect_btn.config(state="disabled", text="Verbinde…")
+        self.connect_btn.configure(state="disabled", text="Verbinde...")
         self.config["last_address"] = address
         self._save_config()
 
@@ -598,27 +673,20 @@ class TreadmillTrayApp:
         self._refresh_sound_button()
 
     def _refresh_sound_button(self):
+        # Das Laufband meldet seinen Ton-Status nicht zuverlässig direkt nach dem
+        # Verbinden (buzzer_control kommt erst mit einem späteren Notify-Paket,
+        # falls überhaupt). Solange der echte Zustand unbekannt ist, darf der
+        # Button also nicht "Stummschalten"/"Ton einschalten" vorgaukeln, sondern
+        # zeigt sich neutral als reiner Toggle.
         if self._sound_on is True:
-            self.sound_btn.config(
-                text="🔕 Stummschalten",
-                bg=C_PANEL,
-                fg=C_FG,
-                activebackground=C_PANEL,
-            )
+            self.sound_btn.configure(text="Stummschalten", fg_color=C_PANEL,
+                                      text_color=C_FG, hover_color=C_ACCENT_H)
         elif self._sound_on is False:
-            self.sound_btn.config(
-                text="🔔 Ton einschalten",
-                bg=C_ACCENT,
-                fg="#fff",
-                activebackground="#2070cc",
-            )
+            self.sound_btn.configure(text="Ton einschalten", fg_color=C_ACCENT,
+                                      text_color="#fff", hover_color=C_ACCENT_H)
         else:
-            self.sound_btn.config(
-                text="🔕 Stummschalten",
-                bg=C_PANEL,
-                fg=C_FG,
-                activebackground=C_PANEL,
-            )
+            self.sound_btn.configure(text="Ton umschalten", fg_color=C_PANEL,
+                                      text_color=C_FG, hover_color=C_ACCENT_H)
 
     def _set_speed_direct(self, speed_units: int):
         self.current_speed = speed_units
@@ -669,38 +737,28 @@ class TreadmillTrayApp:
     def _show_history(self):
         history = list(reversed(load_history()))
 
-        win = tk.Toplevel(self.root)
+        win = ctk.CTkToplevel(self.root)
         win.title("Workout-Historie")
-        win.configure(bg=C_BG)
-        win.geometry("520x420")
+        win.configure(fg_color=C_BG)
+        win.geometry("520x460")
         win.transient(self.root)
 
-        header = tk.Frame(win, bg=C_BG, pady=10)
-        header.pack(fill="x", padx=10)
-        self._lbl(header, "📋 Letzte Läufe", font=("Segoe UI", 12, "bold"), fg=C_FG).pack(side="left")
-        self._lbl(header, f"{len(history)} Einträge", font=("Segoe UI", 9), fg=C_MUTED).pack(side="right")
+        header = ctk.CTkFrame(win, fg_color="transparent")
+        header.pack(fill="x", padx=14, pady=(14, 8))
+        ctk.CTkLabel(header, text="Letzte Läufe", font=_font(12, "bold"),
+                     text_color=C_FG).pack(side="left")
+        ctk.CTkLabel(header, text=f"{len(history)} Einträge", font=_font(9),
+                     text_color=C_MUTED).pack(side="right")
 
-        body = tk.Frame(win, bg=C_CARD, padx=8, pady=8)
-        body.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-
-        text = tk.Text(
-            body,
-            bg="#0d1b2a",
-            fg=C_FG,
-            relief="flat",
-            wrap="word",
-            font=("Consolas", 9),
-            padx=8,
-            pady=8,
-            height=16,
-        )
-        scroll = tk.Scrollbar(body, command=text.yview)
-        text.configure(yscrollcommand=scroll.set)
-        text.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
+        body = ctk.CTkScrollableFrame(win, fg_color=C_CARD, corner_radius=10)
+        body.pack(fill="both", expand=True, padx=14, pady=(0, 10))
 
         if not history:
-            text.insert("end", "Noch keine Läufe gespeichert.\n\nSobald du ein Workout startest und wieder stoppst, erscheint es hier.")
+            ctk.CTkLabel(
+                body, justify="left", text_color=C_MUTED, font=_font(10),
+                text="Noch keine Läufe gespeichert.\n\nSobald du ein Workout startest "
+                     "und wieder stoppst, erscheint es hier."
+            ).pack(padx=10, pady=10, anchor="w")
         else:
             for idx, item in enumerate(history[:30], start=1):
                 started = item.get("start_time", "")
@@ -711,59 +769,76 @@ class TreadmillTrayApp:
                 duration_s = int(item.get("duration_s", 0))
                 h, m, s = duration_s // 3600, (duration_s % 3600) // 60, duration_s % 60
                 duration = f"{h:02d}:{m:02d}:{s:02d}"
-                text.insert(
-                    "end",
-                    f"{idx:02d}. {started}\n"
-                    f"    Dauer: {duration} | Distanz: {item.get('distance_km', 0):.2f} km | Schritte: {item.get('steps', 0)}\n"
-                    f"    Kalorien: {item.get('calories', 0)} kcal | Ø: {item.get('avg_speed_kmh', 0):.1f} km/h | Ziel: {item.get('target_speed_kmh', 0):.1f} km/h\n\n",
-                )
-        text.config(state="disabled")
 
-        btn_row = tk.Frame(win, bg=C_BG)
-        btn_row.pack(fill="x", padx=10, pady=(0, 10))
-        self._btn(btn_row, "Schließen", win.destroy, bg=C_ACCENT, fg="#fff", pady=6).pack(side="right")
+                row = ctk.CTkFrame(body, fg_color=C_PANEL, corner_radius=8)
+                row.pack(fill="x", padx=4, pady=3)
+                inner = ctk.CTkFrame(row, fg_color="transparent")
+                inner.pack(fill="x", padx=10, pady=8)
+
+                ctk.CTkLabel(inner, text=f"{idx:02d}. {started}", font=_font(10, "bold"),
+                             text_color=C_FG, anchor="w").pack(fill="x")
+                ctk.CTkLabel(
+                    inner, anchor="w", justify="left", text_color=C_MUTED,
+                    font=_font(9, family="Consolas"),
+                    text=(f"Dauer {duration}  |  Distanz {item.get('distance_km', 0):.2f} km  "
+                          f"|  Schritte {item.get('steps', 0)}\n"
+                          f"Kalorien {item.get('calories', 0)} kcal  "
+                          f"|  Ø {item.get('avg_speed_kmh', 0):.1f} km/h  "
+                          f"|  Ziel {item.get('target_speed_kmh', 0):.1f} km/h")
+                ).pack(fill="x", pady=(2, 0))
+
+        btn_row = ctk.CTkFrame(win, fg_color="transparent")
+        btn_row.pack(fill="x", padx=14, pady=(0, 14))
+        ctk.CTkButton(btn_row, text="Schließen", command=win.destroy,
+                      fg_color=C_ACCENT, hover_color=C_ACCENT_H, text_color="#fff",
+                      corner_radius=6, height=32).pack(side="right")
 
     # ------------------------------------------------------------------
     # Geräte-Scan
     # ------------------------------------------------------------------
 
     def _scan_devices(self):
-        win = tk.Toplevel(self.root)
+        win = ctk.CTkToplevel(self.root)
         win.title("Bluetooth-Gerät suchen")
-        win.configure(bg=C_BG)
-        win.geometry("380x300")
+        win.configure(fg_color=C_BG)
+        win.geometry("380x320")
         win.transient(self.root)
         win.grab_set()
 
-        tk.Label(
-            win, text="Suche nach Bluetooth-Geräten (5 Sek.)…",
-            font=("Segoe UI", 10), bg=C_BG, fg=C_FG, pady=10
-        ).pack()
+        ctk.CTkLabel(
+            win, text="Suche nach Bluetooth-Geräten (5 Sek.)...",
+            font=_font(10), text_color=C_FG
+        ).pack(pady=(14, 8))
 
-        lb = tk.Listbox(
-            win, bg="#0d1b2a", fg=C_FG, font=("Consolas", 9),
-            selectbackground=C_ACCENT, relief="flat", bd=4, height=10
-        )
-        lb.pack(fill="both", expand=True, padx=10)
-        lb.insert("end", "Scanne…")
+        list_frame = ctk.CTkScrollableFrame(win, fg_color=C_CARD, corner_radius=10)
+        list_frame.pack(fill="both", expand=True, padx=14)
 
-        def on_select(event=None):
-            sel = lb.curselection()
-            if not sel:
-                return
-            line: str = lb.get(sel[0])
-            if "(" in line:
-                addr = line.rsplit("(", 1)[-1].rstrip(")")
-                self.addr_var.set(addr)
+        status_lbl = ctk.CTkLabel(list_frame, text="Scanne...", text_color=C_MUTED,
+                                   font=_font(9))
+        status_lbl.pack(padx=10, pady=10, anchor="w")
+
+        def pick(addr: str):
+            self.addr_var.set(addr)
             win.destroy()
 
-        lb.bind("<Double-Button-1>", on_select)
+        def _show(devices):
+            status_lbl.destroy()
+            if not devices:
+                ctk.CTkLabel(list_frame, text="Keine Geräte gefunden",
+                             text_color=C_MUTED, font=_font(9)).pack(padx=10, pady=10)
+                return
+            for d in sorted(devices, key=lambda x: (x.name or "").lower()):
+                name = d.name or "Unbekannt"
+                row = ctk.CTkButton(
+                    list_frame, text=f"{name}   ({d.address})",
+                    anchor="w", command=lambda a=d.address: pick(a),
+                    fg_color=C_PANEL, hover_color=C_ACCENT_H, text_color=C_FG,
+                    font=_font(9, family="Consolas"), corner_radius=6, height=32
+                )
+                row.pack(fill="x", padx=4, pady=2)
 
-        btn_row = tk.Frame(win, bg=C_BG)
-        btn_row.pack(fill="x", padx=10, pady=8)
-        self._btn(btn_row, "Auswählen", on_select,
-                  bg=C_ACCENT, fg="#fff").pack(side="left")
-        self._btn(btn_row, "Abbrechen", win.destroy).pack(side="right")
+        def _show_err(msg):
+            status_lbl.configure(text=f"Fehler: {msg}")
 
         async def do_scan():
             try:
@@ -772,16 +847,11 @@ class TreadmillTrayApp:
             except Exception as e:
                 win.after(0, lambda: _show_err(str(e)))
 
-        def _show(devices):
-            lb.delete(0, "end")
-            for d in sorted(devices, key=lambda x: (x.name or "").lower()):
-                lb.insert("end", f"{d.name or 'Unbekannt'}  ({d.address})")
-            if not devices:
-                lb.insert("end", "Keine Geräte gefunden")
-
-        def _show_err(msg):
-            lb.delete(0, "end")
-            lb.insert("end", f"Fehler: {msg}")
+        btn_row = ctk.CTkFrame(win, fg_color="transparent")
+        btn_row.pack(fill="x", padx=14, pady=10)
+        ctk.CTkButton(btn_row, text="Abbrechen", command=win.destroy,
+                      fg_color="transparent", hover_color=C_PANEL, text_color=C_MUTED,
+                      border_width=1, border_color=C_PANEL, corner_radius=6).pack(side="right")
 
         threading.Thread(target=lambda: asyncio.run(do_scan()), daemon=True).start()
 
